@@ -1,4 +1,7 @@
+from RealtimeSTT import AudioToTextRecorder
 import ollama
+import pyaudio
+import sys
 
 # system 메시지로 AI의 톤과 제약사항을 지정
 messages = [
@@ -14,42 +17,129 @@ messages = [
     }
 ]
 
-while True:
-    user_input = input("You: ")
-    if user_input.lower() == "exit":
-        break
+def model(text):
+    global messages
 
-    # 사용자가 '새로운 주제'라고 입력한 경우,
-    #    히스토리에서 system 메시지만 남기고 모두 삭제
-    if user_input.strip() == "새로운 주제":
-        print("AI: 새로운 주제를 받았습니다. 이전 대화를 초기화합니다.")
-        # system 메시지는 인덱스 0에만 존재하므로, messages[0]을 남기고 나머지를 지움
-        messages = [messages[0]]
-        continue
-
-    # 일반적인 사용자 메시지 추가
+    
     messages.append({
         'role': 'user',
-        'content': user_input,
+        'content': text,
     })
 
-    # 모델 호출
     response = ollama.chat(
         model='EEVE-Korean-10.8B:latest',
-        messages=messages
+        messages=messages,
+        stream = True
     )
-    ai_reply = response['message']['content']
+    reply = ""
 
-    # AI의 응답을 출력
-    print("AI:", ai_reply)
+    print("Model: ", end='')
+    for res in response:
+        reply += res['message']['content']
+        print(res['message']['content'], end='', flush=True)
+    print()
 
-    # AI 응답을 히스토리에 추가
     messages.append({
         'role': 'assistant',
-        'content': ai_reply,
+        'content': reply,
     })
 
-    # 히스토리가 너무 길어지면, system 메시지를 제외한 최근 20개 메시지(=user+assistant 쌍 약 10개)만 남김
     if len(messages) > 1 + 20:
-        # messages[0]은 항상 system이고, 나머지 중 뒤에서 20개만 남김
         messages = [messages[0]] + messages[-20:]
+
+def program_exit():
+    recorder.shutdown()
+    sys.exit("Program exit")
+
+if __name__ == '__main__':
+    recorder = AudioToTextRecorder (
+        realtime_model_type="large-v2",
+        language='ko',
+        no_log_file=True,
+        input_device_index=0
+    )
+    input_mode = "/chat"
+    while True:
+        user_input = input("Input (? /help): ")
+        
+        if user_input.lower() == "/help":
+            print("=================================")
+            
+            print("/start: AI model start")
+            print("/exit: Program exit")
+            print("/reset: Reset conversation")
+            print("/change_mode: Change mode")
+            print("/change_device: Voice input device change")
+
+            print("=================================")
+            continue
+        
+        # = start =
+        if user_input.lower() == "/start":
+            while True:
+                if input_mode.lower() == "/chat":
+                    user_input = input("User (/exit): ")
+                    if user_input.lower() == "/exit": break
+                    text = user_input
+                elif input_mode.lower() == "/voice":
+                    user_input = input("Press Enter to start recording... (/exit)>> ")
+                    if user_input.lower() == "/exit": break
+                    recorder.start()
+                    user_input = input("Press Enter to stop recording...")
+                    recorder.stop()
+                    text = recorder.text()
+                    
+                    print("User: ", text)
+
+                model(text)
+            continue
+        # = exit =
+        if user_input.lower() == "/exit":
+            break
+
+        # = reset =
+        if user_input.lower() == "/reset":
+            print("Resets the previous conversation.")
+            messages = [messages[0]]
+            continue
+        
+        # = change_mode =
+        if user_input.lower() == "/change_mode":
+            print("/chat (default): Chat input mode")
+            print("/voice: Voice input mode")
+
+            input_mode = input("Change mode >> ")
+            
+            if input_mode.lower() == "/chat": print("Changed to chat mode")
+            elif input_mode.lower() == "/voice": print("Changed to voice mode")
+            else: print("This command does not exist.")
+
+            continue
+        
+        # = change_device =
+        if user_input.lower() == "/change_device":
+
+            p = pyaudio.PyAudio()
+            info = p.get_host_api_info_by_index(0)
+            numdevices = info.get('deviceCount')
+
+            for i in range(0, numdevices):
+                if (p.get_device_info_by_host_api_device_index(0, i).get('maxInputChannels')) > 0:
+                    print("Input Device id ", i, " - ", p.get_device_info_by_host_api_device_index(0, i).get('name'))
+            print("total devices: ", p.get_device_count())
+            print("default id is 0")
+            user_input = input("Change device id >> ")
+            try:
+                num = int(user_input)
+                if num > numdevices:
+                    print("There is no device id")
+
+            except ValueError:
+                print("Invalid input: not a number.")
+                continue
+
+            recorder.input_device_index = num
+            continue
+        
+        print("This command does not exist.")
+    program_exit()
