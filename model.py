@@ -11,15 +11,13 @@ messages = [
             "당신은 친절하고 다양한 표현으로 답변하는 AI입니다."
             "같은 표현을 반복하지 않습니다."
             "당신은 사용자의 질문에 반드시 간결하고 정확하게만 답해야 합니다. 불필요한 추가 정보를 제공하지 마십시오."
-            "대화 도중 사용자가 '새로운 주제'라고 입력하면,"
-            "이전 대화 히스토리를 최신 system 메시지를 제외하고 초기화하십시오."
+            "당신은 일상대화를 나눕니다."
         )
     }
 ]
 
 def model(text):
     global messages
-
     
     messages.append({
         'role': 'user',
@@ -44,8 +42,9 @@ def model(text):
         'content': reply,
     })
 
-    if len(messages) > 1 + 20:
-        messages = [messages[0]] + messages[-20:]
+    history_lan = 40
+    if len(messages) > 1 + history_lan:
+        messages = [messages[0]] + messages[-history_lan:]
 
 def program_exit():
     recorder.shutdown()
@@ -118,21 +117,27 @@ if __name__ == '__main__':
         
         # = change_device =
         if user_input.lower() == "/change_device":
-
             p = pyaudio.PyAudio()
             info = p.get_host_api_info_by_index(0)
             numdevices = info.get('deviceCount')
 
+            input_device_count = 0
+
             for i in range(0, numdevices):
-                if (p.get_device_info_by_host_api_device_index(0, i).get('maxInputChannels')) > 0:
-                    print("Input Device id ", i, " - ", p.get_device_info_by_host_api_device_index(0, i).get('name'))
-            print("total devices: ", p.get_device_count())
+                dev_info = p.get_device_info_by_host_api_device_index(0, i)
+                if dev_info.get('maxInputChannels') > 0:
+                    print("Input Device id ", i, " - ", dev_info.get('name'))
+                    input_device_count += 1
+
+            print("total input devices:", input_device_count)
             print("default id is 0")
+
             user_input = input("Change device id >> ")
             try:
                 num = int(user_input)
-                if num > numdevices:
+                if num > input_device_count - 1:
                     print("There is no device id")
+                    continue
 
             except ValueError:
                 print("Invalid input: not a number.")
